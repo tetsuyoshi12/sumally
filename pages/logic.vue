@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { CONV_TIERS } from '~/utils/score'
+
 useHead({ title: '計算ロジック公開 | SUMALLY' })
 
 const hazardRules = [
@@ -10,13 +12,23 @@ const hazardRules = [
   { condition: '液状化リスク：中', point: -8 },
 ]
 
-const convRules = [
-  { condition: '最寄り駅まで 300m 以内', point: +20 },
-  { condition: '最寄り駅まで 1km 以内（300m超）', point: +10 },
-  { condition: '病院まで 1km 以内', point: +15 },
-  { condition: 'スーパーまで 500m 以内', point: +10 },
-  { condition: '学校まで 1km 以内', point: +10 },
-]
+const FACILITY_NAMES: Record<string, string> = {
+  station:          '最寄り駅',
+  hospital:         '最寄り病院・クリニック',
+  supermarket:      '最寄りスーパー',
+  convenienceStore: '最寄りコンビニ',
+  school:           '最寄り小学校',
+}
+
+function formatMeters(m: number): string {
+  return m >= 1000 ? `${m / 1000}km以内` : `${m}m以内`
+}
+
+const convSections = Object.entries(CONV_TIERS).map(([key, tiers]) => ({
+  name: FACILITY_NAMES[key] ?? key,
+  tiers,
+  max: Math.max(...tiers.map((t) => t.points)),
+}))
 </script>
 
 <template>
@@ -32,6 +44,7 @@ const convRules = [
         <ul class="policy-list">
           <li>ハザードスコアと利便性スコアは<strong>分離して表示</strong>（合計・総合評価はしない）</li>
           <li>すべての加減点を<strong>項目ごとに公開</strong>し、ブラックボックス評価を排除</li>
+          <li>利便性は<strong>距離に応じて段階的に加点</strong>（近いほど高得点）</li>
           <li>市区町村内の<strong>偏差値で相対位置を補完</strong>（都市・地方間の不公平を防ぐ）</li>
           <li>スコアはあくまで参考情報。<strong>最終判断はユーザー自身</strong>が行う</li>
         </ul>
@@ -47,10 +60,7 @@ const convRules = [
         </p>
         <table class="rule-table">
           <thead>
-            <tr>
-              <th>条件</th>
-              <th>点数</th>
-            </tr>
+            <tr><th>条件</th><th>点数</th></tr>
           </thead>
           <tbody>
             <tr v-for="r in hazardRules" :key="r.condition">
@@ -64,25 +74,35 @@ const convRules = [
       <section class="section">
         <h2>
           <span class="badge badge-conv">利便性スコア</span>
-          加点方式（基準値 0 点）
+          距離段階加点方式（基準値 0 点）
         </h2>
         <p class="section-desc">
-          Google Places API (New) のデータを使用。駅は 300m 以内と 1km 以内で排他適用（両方は加算しない）。
+          Google Places API (New) のデータを使用。距離が近いほど高得点。各施設は最寄りの1件のみ判定。
         </p>
-        <table class="rule-table">
-          <thead>
-            <tr>
-              <th>条件</th>
-              <th>点数</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="r in convRules" :key="r.condition">
-              <td>{{ r.condition }}</td>
-              <td class="point conv-color">+{{ r.point }}点</td>
-            </tr>
-          </tbody>
-        </table>
+
+        <div class="conv-tables">
+          <div v-for="s in convSections" :key="s.name" class="conv-block">
+            <h3 class="conv-name">
+              {{ s.name }}
+              <span class="conv-max">最大 +{{ s.max }}点</span>
+            </h3>
+            <table class="rule-table">
+              <thead>
+                <tr><th>距離</th><th>点数</th></tr>
+              </thead>
+              <tbody>
+                <tr v-for="t in s.tiers" :key="t.maxMeters">
+                  <td>{{ formatMeters(t.maxMeters) }}</td>
+                  <td class="point conv-color">+{{ t.points }}点</td>
+                </tr>
+                <tr class="row-zero">
+                  <td>それ以上</td>
+                  <td class="point zero-color">0点</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
       </section>
 
       <section class="section">
@@ -103,11 +123,7 @@ const convRules = [
         <h2>データソース</h2>
         <table class="rule-table">
           <thead>
-            <tr>
-              <th>種別</th>
-              <th>提供元</th>
-              <th>更新頻度</th>
-            </tr>
+            <tr><th>種別</th><th>提供元</th><th>更新頻度</th></tr>
           </thead>
           <tbody>
             <tr>
@@ -117,7 +133,12 @@ const convRules = [
             </tr>
             <tr>
               <td>施設データ</td>
-              <td>Google Places API</td>
+              <td>Google Places API (New)</td>
+              <td>随時</td>
+            </tr>
+            <tr>
+              <td>ハザードマップ重ね合わせ</td>
+              <td>国土交通省ハザードマップポータルサイト</td>
               <td>随時</td>
             </tr>
           </tbody>
@@ -202,15 +223,8 @@ const convRules = [
   border-radius: 20px;
 }
 
-.badge-hazard {
-  background: var(--color-hazard);
-  color: #fff;
-}
-
-.badge-conv {
-  background: var(--color-conv);
-  color: #fff;
-}
+.badge-hazard { background: var(--color-hazard); color: #fff; }
+.badge-conv   { background: var(--color-conv);   color: #fff; }
 
 .policy-list {
   list-style: disc;
@@ -220,6 +234,35 @@ const convRules = [
   gap: 8px;
   font-size: 14px;
   line-height: 1.7;
+}
+
+/* 利便性 テーブルグループ */
+.conv-tables {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 20px;
+}
+
+.conv-block {
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.conv-name {
+  font-size: 13px;
+  font-weight: 700;
+  padding: 10px 12px;
+  background: var(--color-bg);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.conv-max {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-conv);
 }
 
 .rule-table {
@@ -244,13 +287,14 @@ const convRules = [
   background: var(--color-bg);
 }
 
-.point {
-  font-weight: 700;
-  white-space: nowrap;
+.row-zero td {
+  color: var(--color-text-sub);
 }
 
+.point { font-weight: 700; white-space: nowrap; }
 .hazard-color { color: var(--color-hazard); }
-.conv-color { color: var(--color-conv); }
+.conv-color   { color: var(--color-conv);   }
+.zero-color   { color: var(--color-text-sub); font-weight: 400; }
 
 .formula-box {
   background: var(--color-bg);

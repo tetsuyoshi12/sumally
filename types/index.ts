@@ -10,9 +10,15 @@ export interface HazardData {
 
 export interface FacilityDistances {
   stationMeters: number | null
+  stationName: string | null
   hospitalMeters: number | null
+  hospitalName: string | null
   supermarketMeters: number | null
+  supermarketName: string | null
+  convenienceStoreMeters: number | null
+  convenienceStoreName: string | null
   schoolMeters: number | null
+  schoolName: string | null
 }
 
 export interface HazardBreakdown {
@@ -27,6 +33,7 @@ export interface ConvenienceBreakdown {
   station: number
   hospital: number
   supermarket: number
+  convenienceStore: number
   school: number
   total: number
 }
@@ -44,6 +51,7 @@ export interface ScoreResponse {
   address: string
   hazard: HazardBreakdown
   convenience: ConvenienceBreakdown
+  distances: FacilityDistances
   deviation: DeviationInfo
   sources: DataSources
 }

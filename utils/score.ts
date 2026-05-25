@@ -5,6 +5,8 @@ import type {
   ConvenienceBreakdown,
 } from '~/types'
 
+// ─── ハザードスコア ───────────────────────────────────────────
+
 export function calcHazardScore(data: HazardData): HazardBreakdown {
   const flood =
     data.flood === 'high' ? -30 : data.flood === 'medium' ? -15 : 0
@@ -26,39 +28,75 @@ export function calcHazardScore(data: HazardData): HazardBreakdown {
   }
 }
 
+// ─── 利便性スコア（距離段階制）────────────────────────────────
+
+export interface ScoreTier {
+  maxMeters: number
+  points: number
+}
+
+/**
+ * 施設ごとのスコア段階テーブル。
+ * ロジック公開ページからも import して使う（単一の事実源）。
+ */
+export const CONV_TIERS: Record<keyof Omit<ConvenienceBreakdown, 'total'>, ScoreTier[]> = {
+  station: [
+    { maxMeters: 200,  points: 20 }, // ほぼ駅前
+    { maxMeters: 500,  points: 15 }, // 徒歩6〜7分
+    { maxMeters: 1000, points: 10 }, // 徒歩12〜13分
+    { maxMeters: 1500, points:  5 }, // 徒歩20分弱
+  ],
+  hospital: [
+    { maxMeters:  500, points: 15 }, // 徒歩7〜8分
+    { maxMeters: 1000, points: 10 }, // 徒歩13分
+    { maxMeters: 2000, points:  5 }, // 自転車5〜10分
+    { maxMeters: 3000, points:  2 }, // 車ですぐ
+  ],
+  supermarket: [
+    { maxMeters:  200, points: 10 }, // 歩いてすぐ
+    { maxMeters:  500, points:  7 }, // 徒歩6〜7分
+    { maxMeters: 1000, points:  4 }, // 徒歩13分・自転車すぐ
+  ],
+  convenienceStore: [
+    { maxMeters:  100, points: 8 }, // ほぼ目の前
+    { maxMeters:  300, points: 5 }, // 徒歩3〜4分
+    { maxMeters:  600, points: 2 }, // 徒歩8分以内
+  ],
+  school: [
+    { maxMeters:  300, points: 10 }, // 徒歩5分以内
+    { maxMeters:  800, points:  7 }, // 徒歩10分以内
+    { maxMeters: 1500, points:  3 }, // 徒歩20分以内
+  ],
+}
+
+function scoreByDistance(meters: number | null, tiers: ScoreTier[]): number {
+  if (meters === null) return 0
+  for (const tier of tiers) {
+    if (meters <= tier.maxMeters) return tier.points
+  }
+  return 0
+}
+
 export function calcConvenienceScore(
   distances: FacilityDistances,
 ): ConvenienceBreakdown {
-  const station =
-    distances.stationMeters !== null
-      ? distances.stationMeters <= 300
-        ? 20
-        : distances.stationMeters <= 1000
-          ? 10
-          : 0
-      : 0
-
-  const hospital =
-    distances.hospitalMeters !== null && distances.hospitalMeters <= 1000
-      ? 15
-      : 0
-
-  const supermarket =
-    distances.supermarketMeters !== null && distances.supermarketMeters <= 500
-      ? 10
-      : 0
-
-  const school =
-    distances.schoolMeters !== null && distances.schoolMeters <= 1000 ? 10 : 0
+  const station          = scoreByDistance(distances.stationMeters,          CONV_TIERS.station)
+  const hospital         = scoreByDistance(distances.hospitalMeters,         CONV_TIERS.hospital)
+  const supermarket      = scoreByDistance(distances.supermarketMeters,      CONV_TIERS.supermarket)
+  const convenienceStore = scoreByDistance(distances.convenienceStoreMeters, CONV_TIERS.convenienceStore)
+  const school           = scoreByDistance(distances.schoolMeters,           CONV_TIERS.school)
 
   return {
     station,
     hospital,
     supermarket,
+    convenienceStore,
     school,
-    total: station + hospital + supermarket + school,
+    total: station + hospital + supermarket + convenienceStore + school,
   }
 }
+
+// ─── 偏差値 ──────────────────────────────────────────────────
 
 export function calcDeviation(
   score: number,

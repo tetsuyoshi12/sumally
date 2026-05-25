@@ -1,10 +1,5 @@
 import { calcHazardScore, calcConvenienceScore, calcDeviation } from '~/utils/score'
-import type {
-  ScoreResponse,
-  MunicipalityStats,
-  HazardData,
-  FacilityDistances,
-} from '~/types'
+import type { ScoreResponse, MunicipalityStats } from '~/types'
 
 export default defineEventHandler(async (event): Promise<ScoreResponse> => {
   const query = getQuery(event)
@@ -16,17 +11,18 @@ export default defineEventHandler(async (event): Promise<ScoreResponse> => {
     throw createError({ statusCode: 400, message: '緯度経度が不正です' })
   }
 
-  // ハザードデータと施設データを並列取得
-  const baseUrl = getRequestURL(event).origin
+  const { reinfolibApiKey, googlePlacesApiKey } = useRuntimeConfig()
+
+  // ハザードデータと施設データを並列取得（直接関数呼び出し・HTTPなし）
   const [hazardData, facilityData] = await Promise.all([
-    $fetch<HazardData>(`${baseUrl}/api/hazard`, { query: { lat, lng } }),
-    $fetch<FacilityDistances>(`${baseUrl}/api/facilities`, { query: { lat, lng } }),
+    fetchHazardData(lat, lng, reinfolibApiKey),
+    fetchFacilitiesData(lat, lng, googlePlacesApiKey),
   ])
 
   const hazard = calcHazardScore(hazardData)
   const convenience = calcConvenienceScore(facilityData)
 
-  // 市区町村統計（Phase 2 でバッチ処理実装。Phase 1 は null を返す）
+  // 市区町村統計（Phase 2 でバッチ処理実装。Phase 1 は null）
   const stats = await getMunicipalityStats(lat, lng)
 
   const deviation = {
@@ -42,6 +38,7 @@ export default defineEventHandler(async (event): Promise<ScoreResponse> => {
     address,
     hazard,
     convenience,
+    distances: facilityData,
     deviation,
     sources: {
       hazard: '国土交通省 不動産情報ライブラリ',
@@ -51,15 +48,10 @@ export default defineEventHandler(async (event): Promise<ScoreResponse> => {
   }
 })
 
-// Supabase から市区町村集計値を取得（Phase 1 はスタブ）
 async function getMunicipalityStats(
   _lat: number,
   _lng: number,
 ): Promise<MunicipalityStats | null> {
   // TODO Phase 2: Supabase から municipality_stats テーブルを参照
-  // const { data } = await supabase.from('municipality_stats')
-  //   .select('*')
-  //   .eq('municipality_id', municipalityId)
-  //   .single()
   return null
 }

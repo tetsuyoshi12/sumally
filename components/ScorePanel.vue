@@ -18,13 +18,6 @@ const HAZARD_LABELS: Record<string, string> = {
   liquefaction: '液状化リスク',
 }
 
-const CONV_LABELS: Record<string, string> = {
-  station: '駅まで徒歩圏内',
-  hospital: '病院まで1km以内',
-  supermarket: 'スーパーまで500m以内',
-  school: '学校まで1km以内',
-}
-
 const hazardItems = computed(() => {
   const b = props.score.hazard
   return [
@@ -35,14 +28,25 @@ const hazardItems = computed(() => {
   ].filter((i) => i.point !== 0)
 })
 
+function formatDist(meters: number | null, radiusMeters: number): string {
+  if (meters === null) {
+    const r = radiusMeters >= 1000 ? `${radiusMeters / 1000}km` : `${radiusMeters}m`
+    return `${r}以上`
+  }
+  if (meters >= 1000) return `${(meters / 1000).toFixed(1)}km`
+  return `${meters}m`
+}
+
 const convItems = computed(() => {
   const b = props.score.convenience
+  const d = props.score.distances
   return [
-    { key: 'station', label: CONV_LABELS.station, point: b.station },
-    { key: 'hospital', label: CONV_LABELS.hospital, point: b.hospital },
-    { key: 'supermarket', label: CONV_LABELS.supermarket, point: b.supermarket },
-    { key: 'school', label: CONV_LABELS.school, point: b.school },
-  ].filter((i) => i.point !== 0)
+    { key: 'station',          label: '最寄り駅',       radius: 2000, point: b.station,          dist: formatDist(d?.stationMeters          ?? null, 2000), name: d?.stationName          ?? null },
+    { key: 'hospital',         label: '最寄り病院',     radius: 3000, point: b.hospital,         dist: formatDist(d?.hospitalMeters         ?? null, 3000), name: d?.hospitalName         ?? null },
+    { key: 'supermarket',      label: '最寄りスーパー', radius: 1500, point: b.supermarket,      dist: formatDist(d?.supermarketMeters      ?? null, 1500), name: d?.supermarketName      ?? null },
+    { key: 'convenienceStore', label: '最寄りコンビニ', radius: 1000, point: b.convenienceStore, dist: formatDist(d?.convenienceStoreMeters ?? null, 1000), name: d?.convenienceStoreName ?? null },
+    { key: 'school',           label: '最寄り小学校',   radius: 2000, point: b.school,           dist: formatDist(d?.schoolMeters           ?? null, 2000), name: d?.schoolName           ?? null },
+  ]
 })
 </script>
 
@@ -92,12 +96,19 @@ const convItems = computed(() => {
         </h2>
 
         <ul class="breakdown-list">
-          <li v-for="item in convItems" :key="item.key" class="breakdown-item">
-            <span class="item-label">{{ item.label }}</span>
-            <span class="item-point conv-color">+{{ item.point }}点</span>
-          </li>
-          <li v-if="convItems.length === 0" class="no-risk">
-            該当なし（0点）
+          <li
+            v-for="item in convItems"
+            :key="item.key"
+            :class="['breakdown-item', { 'item-zero': item.point === 0 }]"
+          >
+            <span class="item-label-group">
+              <span class="item-label">{{ item.label }}</span>
+              <span v-if="item.name" class="item-name">{{ item.name }}</span>
+            </span>
+            <span class="item-dist">{{ item.dist }}</span>
+            <span :class="['item-point', item.point > 0 ? 'conv-color' : 'zero-color']">
+              {{ item.point > 0 ? `+${item.point}点` : '–' }}
+            </span>
           </li>
         </ul>
 
@@ -233,17 +244,53 @@ const convItems = computed(() => {
 }
 
 .breakdown-item {
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: center;
   font-size: 14px;
+}
+
+.item-label-group {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+
+.item-zero .item-label {
+  color: var(--color-text-sub);
 }
 
 .item-label {
   color: var(--color-text);
 }
 
+.item-name {
+  font-size: 11px;
+  color: var(--color-text-sub);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-dist {
+  font-size: 13px;
+  color: var(--color-text-sub);
+  text-align: right;
+  white-space: nowrap;
+}
+
 .item-point {
   font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+  min-width: 44px;
+}
+
+.zero-color {
+  color: var(--color-text-sub);
+  font-weight: 400;
 }
 
 .no-risk {

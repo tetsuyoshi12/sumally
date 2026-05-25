@@ -1,11 +1,13 @@
 <script setup lang="ts">
-import type { ScoreResponse } from '~/types'
+import type { ScoreResponse, MapboxGeocodingResponse } from '~/types'
 
 const route = useRoute()
+const config = useRuntimeConfig()
 
-const lat = computed(() => parseFloat(route.query.lat as string))
-const lng = computed(() => parseFloat(route.query.lng as string))
-const address = computed(() => (route.query.address as string) ?? '')
+// 現在表示中の座標・住所（URLクエリ初期値）
+const lat = ref(parseFloat(route.query.lat as string))
+const lng = ref(parseFloat(route.query.lng as string))
+const address = ref((route.query.address as string) ?? '')
 
 const score = ref<ScoreResponse | null>(null)
 const loading = ref(true)
@@ -26,14 +28,33 @@ async function fetchScore() {
       query: { lat: lat.value, lng: lng.value, address: address.value },
     })
   } catch (e: unknown) {
-    const msg = e instanceof Error ? e.message : 'スコアの取得に失敗しました'
-    error.value = msg
+    error.value = e instanceof Error ? e.message : 'スコアの取得に失敗しました'
   } finally {
     loading.value = false
   }
 }
 
-watch([lat, lng], fetchScore, { immediate: true })
+// ピン移動時: 逆ジオコーディング → スコア再取得
+async function onLocationChanged(pos: { lat: number; lng: number }) {
+  lat.value = pos.lat
+  lng.value = pos.lng
+  address.value = await reverseGeocode(pos.lat, pos.lng)
+  await fetchScore()
+}
+
+async function reverseGeocode(lat: number, lng: number): Promise<string> {
+  try {
+    const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${lng},${lat}.json?access_token=${config.public.mapboxToken}&language=ja&limit=1`
+    const res = await fetch(url)
+    const data = (await res.json()) as MapboxGeocodingResponse
+    return data.features[0]?.place_name ?? `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+  } catch {
+    return `${lat.toFixed(5)}, ${lng.toFixed(5)}`
+  }
+}
+
+// 初回ロード
+onMounted(fetchScore)
 
 useHead({
   title: computed(() =>
@@ -61,6 +82,7 @@ useHead({
             :lat="lat"
             :lng="lng"
             :address="address"
+            @location-changed="onLocationChanged"
           />
           <template #fallback>
             <div class="map-placeholder">地図を読み込み中…</div>

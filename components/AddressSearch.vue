@@ -78,7 +78,7 @@ function onBlur() {
         <input
           v-model="query"
           type="text"
-          placeholder="住所を入力（例：宇都宮市大通り1丁目）"
+          placeholder="住所を入力（例：千代田区千代田1-1 皇居）"
           autocomplete="off"
           @input="onInput"
           @focus="showSuggestions = suggestions.length > 0"
