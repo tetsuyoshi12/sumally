@@ -1,0 +1,181 @@
+<script setup lang="ts">
+import type { ScoreResponse } from '~/types'
+
+const route = useRoute()
+
+const lat = computed(() => parseFloat(route.query.lat as string))
+const lng = computed(() => parseFloat(route.query.lng as string))
+const address = computed(() => (route.query.address as string) ?? '')
+
+const score = ref<ScoreResponse | null>(null)
+const loading = ref(true)
+const error = ref<string | null>(null)
+
+async function fetchScore() {
+  if (isNaN(lat.value) || isNaN(lng.value)) {
+    error.value = '座標が不正です。住所を再入力してください。'
+    loading.value = false
+    return
+  }
+
+  loading.value = true
+  error.value = null
+
+  try {
+    score.value = await $fetch<ScoreResponse>('/api/score', {
+      query: { lat: lat.value, lng: lng.value, address: address.value },
+    })
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : 'スコアの取得に失敗しました'
+    error.value = msg
+  } finally {
+    loading.value = false
+  }
+}
+
+watch([lat, lng], fetchScore, { immediate: true })
+
+useHead({
+  title: computed(() =>
+    address.value ? `${address.value} | SUMALLY` : 'SUMALLY',
+  ),
+})
+</script>
+
+<template>
+  <div class="map-page">
+    <!-- ヘッダー -->
+    <header class="map-header">
+      <NuxtLink to="/" class="back-link">← トップへ</NuxtLink>
+      <span class="header-title">SUMALLY</span>
+      <AddressSearch class="header-search" />
+    </header>
+
+    <!-- メインレイアウト -->
+    <div class="map-layout">
+      <!-- 地図 -->
+      <div class="map-area">
+        <ClientOnly>
+          <MapView
+            v-if="!isNaN(lat) && !isNaN(lng)"
+            :lat="lat"
+            :lng="lng"
+            :address="address"
+          />
+          <template #fallback>
+            <div class="map-placeholder">地図を読み込み中…</div>
+          </template>
+        </ClientOnly>
+      </div>
+
+      <!-- スコアパネル -->
+      <aside class="score-area">
+        <div v-if="error" class="error-msg">
+          <p>{{ error }}</p>
+          <NuxtLink to="/">住所を再入力する</NuxtLink>
+        </div>
+
+        <ScorePanel
+          v-else-if="score || loading"
+          :score="score ?? ({} as ScoreResponse)"
+          :loading="loading"
+        />
+      </aside>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.map-page {
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.map-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 10px 20px;
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.back-link {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.header-title {
+  font-size: 18px;
+  font-weight: 900;
+  color: var(--color-primary);
+  white-space: nowrap;
+}
+
+.header-search {
+  flex: 1;
+  min-width: 220px;
+}
+
+.map-layout {
+  flex: 1;
+  display: flex;
+  overflow: hidden;
+}
+
+.map-area {
+  flex: 1;
+  position: relative;
+  min-height: 0;
+}
+
+.map-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-text-sub);
+  background: var(--color-bg);
+}
+
+.score-area {
+  width: 380px;
+  flex-shrink: 0;
+  background: var(--color-surface);
+  border-left: 1px solid var(--color-border);
+  overflow-y: auto;
+}
+
+.error-msg {
+  padding: 32px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  color: var(--color-hazard);
+}
+
+@media (max-width: 768px) {
+  .map-layout {
+    flex-direction: column;
+  }
+
+  .map-area {
+    flex: none;
+    height: 50dvh;
+  }
+
+  .score-area {
+    width: 100%;
+    flex: 1;
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+  }
+}
+</style>
