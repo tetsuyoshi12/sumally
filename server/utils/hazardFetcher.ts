@@ -1,13 +1,15 @@
 import { latLngToTile, pointInGeoJsonFeature } from '~/utils/tiles'
 import type { HazardData, FloodRisk, LiquefactionRisk } from '~/types'
 
-const REINFOLIB_BASE = 'https://api.reinfolib.mlit.go.jp/ex-api/external'
+// ドキュメント: https://www.reinfolib.mlit.go.jp/help/apiManual/
+const REINFOLIB_BASE = 'https://www.reinfolib.mlit.go.jp/ex-api/external'
 const ZOOM = 15
+
 const LAYER = {
-  flood: 'XKT010',
-  landslide: 'XKT011',
-  tsunami: 'XKT012',
-  liquefaction: 'XKT013',
+  flood:        'XKT026', // 洪水浸水想定区域（想定最大規模）
+  landslide:    'XKT029', // 土砂災害警戒区域
+  tsunami:      'XKT028', // 津波浸水想定
+  liquefaction: 'XKT025', // 液状化の発生傾向図
 } as const
 
 interface GeoJsonFeature {
@@ -35,12 +37,18 @@ export async function fetchHazardData(
   const tile = latLngToTile(lat, lng, ZOOM)
 
   const fetchLayer = async (layerId: string): Promise<GeoJsonResponse | null> => {
-    const url = `${REINFOLIB_BASE}/${layerId}?z=${tile.z}&x=${tile.x}&y=${tile.y}`
+    const url = `${REINFOLIB_BASE}/${layerId}?response_format=geojson&z=${tile.z}&x=${tile.x}&y=${tile.y}`
     try {
-      const res = await fetch(url, { headers: { 'X-API-Key': apiKey } })
-      if (!res.ok) return null
+      const res = await fetch(url, {
+        headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+      })
+      if (!res.ok) {
+        console.error(`[REINFOLIB] ${layerId} HTTP ${res.status}:`, await res.text())
+        return null
+      }
       return res.json() as Promise<GeoJsonResponse>
-    } catch {
+    } catch (e) {
+      console.error(`[REINFOLIB] ${layerId} fetch失敗:`, e)
       return null
     }
   }
@@ -52,12 +60,15 @@ export async function fetchHazardData(
     fetchLayer(LAYER.liquefaction),
   ])
 
-  return {
-    flood: parseFloodRisk(floodGeo, lng, lat),
-    landslide: hasFeaturesAt(landslideGeo, lng, lat),
-    tsunami: hasFeaturesAt(tsunamiGeo, lng, lat),
+  const result: HazardData = {
+    flood:        parseFloodRisk(floodGeo, lng, lat),
+    landslide:    hasFeaturesAt(landslideGeo, lng, lat),
+    tsunami:      hasFeaturesAt(tsunamiGeo, lng, lat),
     liquefaction: parseLiquefactionRisk(liquefactionGeo, lng, lat),
   }
+
+  console.log(`[REINFOLIB] lat=${lat} lng=${lng} →`, JSON.stringify(result))
+  return result
 }
 
 function hasFeaturesAt(geo: GeoJsonResponse | null, lng: number, lat: number): boolean {
@@ -69,20 +80,23 @@ function parseFloodRisk(geo: GeoJsonResponse | null, lng: number, lat: number): 
   if (!geo?.features?.length) return 'none'
   const feature = geo.features.find((f) => pointInGeoJsonFeature(lng, lat, f))
   if (!feature) return 'none'
-  const depth =
-    (feature.properties.depth as number | undefined) ??
-    (feature.properties.A31b_205 as number | undefined)
-  if (depth == null) return 'medium'
-  return depth >= 5 ? 'high' : 'medium'
+
+  // A31a_205: 浸水深ランク（整数）
+  // 1: 0〜0.5m, 2: 0.5〜3m, 3: 3〜5m, 4: 5〜10m, 5: 10m以上
+  const rank = Number(feature.properties.A31a_205 ?? 0)
+  if (rank >= 4) return 'high'   // 5m以上 → -30点
+  if (rank >= 2) return 'medium' // 0.5m〜5m → -15点
+  return 'none'
 }
 
 function parseLiquefactionRisk(geo: GeoJsonResponse | null, lng: number, lat: number): LiquefactionRisk {
   if (!geo?.features?.length) return 'none'
   const feature = geo.features.find((f) => pointInGeoJsonFeature(lng, lat, f))
   if (!feature) return 'none'
-  const rank =
-    (feature.properties.rank as number | undefined) ??
-    (feature.properties.liquefaction_rank as number | undefined)
-  if (rank == null) return 'medium'
-  return rank === 1 ? 'high' : 'medium'
+
+  // liquefaction_tendency_level: 6段階（数値が大きいほどリスク高）
+  const level = Number(feature.properties.liquefaction_tendency_level ?? 0)
+  if (level >= 5) return 'high'   // -15点
+  if (level >= 3) return 'medium' // -8点
+  return 'none'
 }
