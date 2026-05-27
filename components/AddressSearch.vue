@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import type { MapboxGeocodingResponse, MapboxFeature } from '~/types'
 
+const emit = defineEmits<{
+  (e: 'select', lat: number, lng: number, address: string, bbox?: [number, number, number, number]): void
+  (e: 'locate', lat: number, lng: number): void
+}>()
+
 const config = useRuntimeConfig()
 const router = useRouter()
 
@@ -23,7 +28,7 @@ async function onInput() {
     loading.value = true
     try {
       const encoded = encodeURIComponent(query.value)
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${config.public.mapboxToken}&language=ja&country=jp&limit=5&types=address,place,poi`
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${config.public.mapboxToken}&language=ja&country=jp&limit=5&types=district,place,locality,neighborhood,address,poi`
       const res = await fetch(url)
       const data = (await res.json()) as MapboxGeocodingResponse
       suggestions.value = data.features ?? []
@@ -38,6 +43,7 @@ function select(feature: MapboxFeature) {
   const [lng, lat] = feature.center
   query.value = feature.place_name
   showSuggestions.value = false
+  emit('select', lat, lng, feature.place_name, feature.bbox)
   router.push({
     path: '/map',
     query: { lat, lng, address: feature.place_name },
@@ -48,13 +54,11 @@ async function useCurrentLocation() {
   if (!navigator.geolocation) return
   navigator.geolocation.getCurrentPosition(
     (pos) => {
+      const { latitude: lat, longitude: lng } = pos.coords
+      emit('locate', lat, lng)
       router.push({
         path: '/map',
-        query: {
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-          address: '現在地',
-        },
+        query: { lat, lng, address: '現在地' },
       })
     },
     (err) => {

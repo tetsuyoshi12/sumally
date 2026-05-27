@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { deviationToTopPercent } from '~/utils/score'
+import { deviationToTopPercent, hazardScoreToColor } from '~/utils/score'
 import type { ScoreResponse } from '~/types'
 
 const props = defineProps<{
@@ -17,6 +17,10 @@ const HAZARD_LABELS: Record<string, string> = {
   tsunami: '津波浸水想定区域',
   liquefaction: '液状化リスク',
 }
+
+const hazardTotalColor = computed(() =>
+  hazardScoreToColor(props.score.hazard.total) ?? 'var(--color-text-sub)',
+)
 
 const hazardItems = computed(() => {
   const b = props.score.hazard
@@ -68,7 +72,7 @@ const convItems = computed(() => {
       <section class="section hazard-section">
         <h2 class="section-title">
           <span class="badge badge-hazard">ハザード</span>
-          <span class="total-score hazard-color">{{ score.hazard.total }}点</span>
+          <span class="total-score" :style="{ color: hazardTotalColor }">{{ score.hazard.total }}点</span>
         </h2>
 
         <ul class="breakdown-list">

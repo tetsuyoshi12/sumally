@@ -76,6 +76,7 @@ export interface MapboxFeature {
   id: string
   place_name: string
   center: [number, number]
+  bbox?: [number, number, number, number] // [minLng, minLat, maxLng, maxLat]
   place_type: string[]
 }
 

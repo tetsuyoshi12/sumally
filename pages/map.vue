@@ -12,6 +12,7 @@ const address = ref((route.query.address as string) ?? '')
 const score = ref<ScoreResponse | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
+const mapBbox = ref<[number, number, number, number] | null>(null)
 
 async function fetchScore() {
   if (isNaN(lat.value) || isNaN(lng.value)) {
@@ -34,8 +35,9 @@ async function fetchScore() {
   }
 }
 
-// ピン移動時: 逆ジオコーディング → スコア再取得
+// ピン移動時: 逆ジオコーディング → スコア再取得（bbox はリセット）
 async function onLocationChanged(pos: { lat: number; lng: number }) {
+  mapBbox.value = null
   lat.value = pos.lat
   lng.value = pos.lng
   address.value = await reverseGeocode(pos.lat, pos.lng)
@@ -53,8 +55,33 @@ async function reverseGeocode(lat: number, lng: number): Promise<string> {
   }
 }
 
+// AddressSearch から住所選択イベントを受け取る（router を介さず直接更新）
+async function onAddressSelected(newLat: number, newLng: number, newAddress: string, bbox?: [number, number, number, number]) {
+  mapBbox.value = bbox ?? null
+  lat.value = newLat
+  lng.value = newLng
+  address.value = newAddress
+  await fetchScore()
+}
+
 // 初回ロード
 onMounted(fetchScore)
+
+// URLで直接アクセス・外部遷移時のフォールバック（emit で既に処理済みの場合はスキップ）
+watch(
+  () => route.query,
+  (query) => {
+    const newLat = parseFloat(query.lat as string)
+    const newLng = parseFloat(query.lng as string)
+    if (isNaN(newLat) || isNaN(newLng)) return
+    if (newLat === lat.value && newLng === lng.value) return
+    lat.value = newLat
+    lng.value = newLng
+    address.value = (query.address as string) ?? ''
+    fetchScore()
+  },
+  { deep: true },
+)
 
 useHead({
   title: computed(() =>
@@ -69,7 +96,11 @@ useHead({
     <header class="map-header">
       <NuxtLink to="/" class="back-link">← トップへ</NuxtLink>
       <span class="header-title">SUMALLY</span>
-      <AddressSearch class="header-search" />
+      <AddressSearch
+        class="header-search"
+        @select="onAddressSelected"
+        @locate="(lat, lng) => onLocationChanged({ lat, lng })"
+      />
     </header>
 
     <!-- メインレイアウト -->
@@ -82,12 +113,15 @@ useHead({
             :lat="lat"
             :lng="lng"
             :address="address"
+            :bbox="mapBbox"
+            :hazard-total="score?.hazard.total ?? 0"
             @location-changed="onLocationChanged"
           />
           <template #fallback>
             <div class="map-placeholder">地図を読み込み中…</div>
           </template>
         </ClientOnly>
+
       </div>
 
       <!-- スコアパネル -->

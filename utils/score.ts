@@ -96,6 +96,33 @@ export function calcConvenienceScore(
   }
 }
 
+// ─── ハザードスコア → カラー（0=色なし、負値=黄→橙→赤→赤黒） ──────
+
+const HAZARD_COLOR_STOPS = [
+  { t: 0,    r: 250, g: 204, b:  21 }, // #facc15 黄
+  { t: 0.33, r: 249, g: 115, b:  22 }, // #f97316 橙
+  { t: 0.67, r: 239, g:  68, b:  68 }, // #ef4444 赤
+  { t: 1.0,  r: 127, g:  29, b:  29 }, // #7f1d1d 赤黒
+] as const
+
+/**
+ * ハザード合計点（0〜-90）を CSS カラー文字列に変換する。
+ * score === 0 のとき null を返す（色なし＝デフォルト色を使う）。
+ */
+export function hazardScoreToColor(score: number): string | null {
+  if (score >= 0) return null
+  const t = Math.min(1, Math.abs(score) / 90)
+  let i = 0
+  while (i < HAZARD_COLOR_STOPS.length - 2 && t > HAZARD_COLOR_STOPS[i + 1].t) i++
+  const a = HAZARD_COLOR_STOPS[i]
+  const b = HAZARD_COLOR_STOPS[i + 1]
+  const seg = (t - a.t) / (b.t - a.t)
+  const r = Math.round(a.r + (b.r - a.r) * seg)
+  const g = Math.round(a.g + (b.g - a.g) * seg)
+  const bv = Math.round(a.b + (b.b - a.b) * seg)
+  return `rgb(${r}, ${g}, ${bv})`
+}
+
 // ─── 偏差値 ──────────────────────────────────────────────────
 
 export function calcDeviation(

@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import mapboxgl from 'mapbox-gl'
+import { hazardScoreToColor } from '~/utils/score'
 
 const props = defineProps<{
   lat: number
   lng: number
   address: string
+  bbox?: [number, number, number, number] | null
+  hazardTotal?: number
 }>()
 
 const emit = defineEmits<{
@@ -15,6 +18,21 @@ const config = useRuntimeConfig()
 const mapContainer = ref<HTMLDivElement | null>(null)
 let map: mapboxgl.Map | null = null
 let marker: mapboxgl.Marker | null = null
+let markerEl: HTMLDivElement | null = null
+
+const PIN_DEFAULT_COLOR = '#2b5be0'
+
+function createMarkerEl(): HTMLDivElement {
+  const el = document.createElement('div')
+  el.className = 'map-pin'
+  el.style.backgroundColor = PIN_DEFAULT_COLOR
+  return el
+}
+
+function updatePinColor(score: number) {
+  if (!markerEl) return
+  markerEl.style.backgroundColor = hazardScoreToColor(score) ?? PIN_DEFAULT_COLOR
+}
 
 // ハザードマップポータルサイト 公開タイル
 // 出典: 国土交通省ハザードマップポータルサイト https://disaportal.gsi.go.jp/
@@ -62,11 +80,7 @@ function addHazardLayers() {
         type: 'raster',
         source: `src-${layer.id}`,
         paint: {
-          'raster-opacity': activeLayers.value.has(layer.id) ? 0.88 : 0,
-          // 薄い赤→濃い赤黒 に近づけるため contrast・saturation を強化
-          'raster-contrast': 0.5,
-          'raster-saturation': 0.6,
-          'raster-brightness-max': 0.75, // 明るすぎる部分を抑えて全体を締める
+          'raster-opacity': activeLayers.value.has(layer.id) ? 1.0 : 0,
         },
       },
       firstSymbolId,
@@ -103,8 +117,9 @@ onMounted(() => {
 
   map.addControl(new mapboxgl.NavigationControl(), 'top-right')
 
-  // ② ドラッグ可能なピン
-  marker = new mapboxgl.Marker({ color: '#2b5be0', draggable: true })
+  // ② ドラッグ可能なカスタムピン
+  markerEl = createMarkerEl()
+  marker = new mapboxgl.Marker({ element: markerEl, draggable: true })
     .setLngLat([props.lng, props.lat])
     .setPopup(new mapboxgl.Popup({ offset: 25 }).setHTML(`<strong>${props.address}</strong>`))
     .addTo(map)
@@ -129,14 +144,25 @@ onUnmounted(() => {
 })
 
 watch(
+  () => props.hazardTotal,
+  (score) => updatePinColor(score ?? 0),
+)
+
+watch(
   () => [props.lat, props.lng] as [number, number],
   ([lat, lng]) => {
-    if (!marker) return
+    if (!marker || !map) return
     const cur = marker.getLngLat()
     // 外部から座標が変わった時だけ飛ぶ（ドラッグ中は無視）
     if (Math.abs(cur.lat - lat) > 0.0001 || Math.abs(cur.lng - lng) > 0.0001) {
-      map?.flyTo({ center: [lng, lat], zoom: 15 })
       marker.setLngLat([lng, lat])
+      if (props.bbox) {
+        // 区・市・ランドマーク等: 境界ボックスに合わせてズーム自動調整
+        map.fitBounds(props.bbox, { padding: 80, maxZoom: 16 })
+      } else {
+        // 具体的な住所: 番地レベルで表示
+        map.flyTo({ center: [lng, lat], zoom: 15 })
+      }
     }
   },
 )
@@ -181,6 +207,21 @@ watch(
 .map-container {
   width: 100%;
   height: 100%;
+}
+
+/* カスタムマーカー */
+:global(.map-pin) {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 3px solid #fff;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  cursor: grab;
+  transition: background-color 0.6s ease;
+}
+
+:global(.map-pin:active) {
+  cursor: grabbing;
 }
 
 /* 操作ヒント */
