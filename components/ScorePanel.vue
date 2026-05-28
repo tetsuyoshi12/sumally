@@ -75,7 +75,11 @@ const convItems = computed(() => {
           <span class="total-score" :style="{ color: hazardTotalColor }">{{ score.hazard.total }}点</span>
         </h2>
 
-        <ul class="breakdown-list">
+        <div v-if="!score.hazardAvailable" class="hazard-unavailable">
+          ⚠️ ハザードデータを取得できませんでした
+        </div>
+
+        <ul v-else class="breakdown-list">
           <li v-for="item in hazardItems" :key="item.key" class="breakdown-item">
             <span class="item-label">{{ item.label }}</span>
             <span class="item-point hazard-color">{{ item.point }}点</span>
@@ -300,6 +304,12 @@ const convItems = computed(() => {
 .no-risk {
   font-size: 14px;
   color: var(--color-text-sub);
+}
+
+.hazard-unavailable {
+  font-size: 13px;
+  color: var(--color-text-sub);
+  padding: 4px 0;
 }
 
 .deviation-row {

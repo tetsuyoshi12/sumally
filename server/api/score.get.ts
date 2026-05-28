@@ -1,8 +1,7 @@
 import { calcHazardScore, calcConvenienceScore, calcDeviation } from '~/utils/score'
 import type { ScoreResponse, MunicipalityStats } from '~/types'
 
-// 同一座標への連続リクエストをサーバー側でキャッシュ（5分間）
-export default defineCachedEventHandler(async (event): Promise<ScoreResponse> => {
+export default defineEventHandler(async (event): Promise<ScoreResponse> => {
   const query = getQuery(event)
   const lat = parseFloat(query.lat as string)
   const lng = parseFloat(query.lng as string)
@@ -15,10 +14,24 @@ export default defineCachedEventHandler(async (event): Promise<ScoreResponse> =>
   const { reinfolibApiKey, googlePlacesApiKey } = useRuntimeConfig()
 
   // ハザードデータと施設データを並列取得（直接関数呼び出し・HTTPなし）
-  const [hazardData, facilityData] = await Promise.all([
-    fetchHazardData(lat, lng, reinfolibApiKey),
-    fetchFacilitiesData(lat, lng, googlePlacesApiKey),
+  const [hazardResult, facilityData] = await Promise.all([
+    fetchHazardData(lat, lng, reinfolibApiKey).catch(() => null),
+    fetchFacilitiesData(lat, lng, googlePlacesApiKey).catch(() => ({
+      stationMeters: null, stationName: null,
+      hospitalMeters: null, hospitalName: null,
+      supermarketMeters: null, supermarketName: null,
+      convenienceStoreMeters: null, convenienceStoreName: null,
+      schoolMeters: null, schoolName: null,
+    })),
   ])
+
+  const hazardAvailable = hazardResult !== null
+  const hazardData = hazardResult ?? {
+    flood: 'none' as const,
+    landslide: false,
+    tsunami: false,
+    liquefaction: 'none' as const,
+  }
 
   const hazard = calcHazardScore(hazardData)
   const convenience = calcConvenienceScore(facilityData)
@@ -37,6 +50,7 @@ export default defineCachedEventHandler(async (event): Promise<ScoreResponse> =>
     lat,
     lng,
     address,
+    hazardAvailable,
     hazard,
     convenience,
     distances: facilityData,
@@ -47,15 +61,6 @@ export default defineCachedEventHandler(async (event): Promise<ScoreResponse> =>
       updatedAt: new Date().toISOString().split('T')[0],
     },
   }
-}, {
-  maxAge: 60 * 5, // 5分キャッシュ
-  getKey: (event) => {
-    const q = getQuery(event)
-    // 小数点3桁（約100m精度）でキャッシュキーを作成
-    const lat = Math.round(parseFloat(q.lat as string) * 1000) / 1000
-    const lng = Math.round(parseFloat(q.lng as string) * 1000) / 1000
-    return `score:${lat}:${lng}`
-  },
 })
 
 async function getMunicipalityStats(

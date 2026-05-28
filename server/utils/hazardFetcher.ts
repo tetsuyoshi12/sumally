@@ -31,7 +31,7 @@ export async function fetchHazardData(
   lat: number,
   lng: number,
   apiKey: string,
-): Promise<HazardData> {
+): Promise<HazardData | null> {
   if (!apiKey) return MOCK_HAZARD
 
   const tile = latLngToTile(lat, lng, ZOOM)
@@ -41,13 +41,13 @@ export async function fetchHazardData(
     try {
       const res = await fetch(url, {
         headers: { 'Ocp-Apim-Subscription-Key': apiKey },
-        signal: AbortSignal.timeout(8000),
+        signal: AbortSignal.timeout(6000),
       })
       if (!res.ok) {
         console.error(`[REINFOLIB] ${layerId} HTTP ${res.status}:`, await res.text())
         return null
       }
-      return res.json() as Promise<GeoJsonResponse>
+      return await res.json() as GeoJsonResponse
     } catch (e) {
       console.error(`[REINFOLIB] ${layerId} fetch失敗:`, e)
       return null
@@ -60,6 +60,12 @@ export async function fetchHazardData(
     fetchLayer(LAYER.tsunami),
     fetchLayer(LAYER.liquefaction),
   ])
+
+  // 全レイヤーが null = タイムアウト or 通信エラー → null を返して呼び出し元に通知
+  if ([floodGeo, landslideGeo, tsunamiGeo, liquefactionGeo].every(g => g === null)) {
+    console.error('[REINFOLIB] 全レイヤー取得失敗（タイムアウトの可能性）')
+    return null
+  }
 
   const result: HazardData = {
     flood:        parseFloodRisk(floodGeo, lng, lat),

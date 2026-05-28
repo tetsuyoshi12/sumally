@@ -49,6 +49,7 @@ export interface ScoreResponse {
   lat: number
   lng: number
   address: string
+  hazardAvailable: boolean
   hazard: HazardBreakdown
   convenience: ConvenienceBreakdown
   distances: FacilityDistances
