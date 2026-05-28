@@ -47,8 +47,6 @@ export default defineCachedEventHandler(async (event): Promise<ScoreResponse> =>
       updatedAt: new Date().toISOString().split('T')[0],
     },
   }
-})
-
 }, {
   maxAge: 60 * 5, // 5分キャッシュ
   getKey: (event) => {
