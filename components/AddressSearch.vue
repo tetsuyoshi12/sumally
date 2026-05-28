@@ -1,5 +1,16 @@
 <script setup lang="ts">
-import type { MapboxGeocodingResponse, MapboxFeature } from '~/types'
+interface Suggestion {
+  id: string
+  name: string
+  label: string
+}
+
+interface PlaceDetail {
+  name: string
+  lat: number
+  lng: number
+  bbox: [number, number, number, number] | null
+}
 
 const props = defineProps<{
   proximity?: { lat: number; lng: number } | null
@@ -10,11 +21,10 @@ const emit = defineEmits<{
   (e: 'locate', lat: number, lng: number): void
 }>()
 
-const config = useRuntimeConfig()
 const router = useRouter()
 
 const query = ref('')
-const suggestions = ref<MapboxFeature[]>([])
+const suggestions = ref<Suggestion[]>([])
 const loading = ref(false)
 const showSuggestions = ref(false)
 
@@ -31,30 +41,42 @@ async function onInput() {
   debounceTimer = setTimeout(async () => {
     loading.value = true
     try {
-      const encoded = encodeURIComponent(query.value)
-      const prox = props.proximity
-        ? `${props.proximity.lng},${props.proximity.lat}`
-        : 'ip'
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${config.public.mapboxToken}&language=ja&country=jp&limit=5&types=district,place,locality,neighborhood,address,poi&proximity=${prox}`
-      const res = await fetch(url)
-      const data = (await res.json()) as MapboxGeocodingResponse
-      suggestions.value = data.features ?? []
-      showSuggestions.value = true
+      const result = await $fetch<Suggestion[]>('/api/geocode/suggest', {
+        method: 'POST',
+        body: {
+          q: query.value,
+          lat: props.proximity?.lat,
+          lng: props.proximity?.lng,
+        },
+      })
+      suggestions.value = result ?? []
+      showSuggestions.value = suggestions.value.length > 0
+    } catch {
+      suggestions.value = []
     } finally {
       loading.value = false
     }
   }, 300)
 }
 
-function select(feature: MapboxFeature) {
-  const [lng, lat] = feature.center
-  query.value = feature.place_name
+async function select(suggestion: Suggestion) {
   showSuggestions.value = false
-  emit('select', lat, lng, feature.place_name, feature.bbox)
-  router.push({
-    path: '/map',
-    query: { lat, lng, address: feature.place_name },
-  })
+  query.value = suggestion.name
+  loading.value = true
+
+  try {
+    const detail = await $fetch<PlaceDetail | null>('/api/geocode/detail', {
+      query: { id: suggestion.id },
+    })
+    if (!detail) return
+    emit('select', detail.lat, detail.lng, detail.name, detail.bbox ?? undefined)
+    router.push({
+      path: '/map',
+      query: { lat: detail.lat, lng: detail.lng, address: detail.name },
+    })
+  } finally {
+    loading.value = false
+  }
 }
 
 async function useCurrentLocation() {
@@ -89,7 +111,7 @@ function onBlur() {
         <input
           v-model="query"
           type="text"
-          placeholder="住所を入力（例：千代田区千代田1-1 皇居）"
+          placeholder="住所・駅名・施設名を入力"
           autocomplete="off"
           @input="onInput"
           @focus="showSuggestions = suggestions.length > 0"
@@ -109,7 +131,7 @@ function onBlur() {
         :key="s.id"
         @mousedown.prevent="select(s)"
       >
-        {{ s.place_name }}
+        {{ s.label }}
       </li>
     </ul>
   </div>
