@@ -49,6 +49,7 @@ export async function fetchFacilitiesData(
           'X-Goog-Api-Key': apiKey,
           'X-Goog-FieldMask': 'places.location,places.displayName,places.primaryType',
         },
+        signal: AbortSignal.timeout(8000),
         body: JSON.stringify({
           includedTypes: types,
           maxResultCount: 5,

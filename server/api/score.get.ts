@@ -1,7 +1,8 @@
 import { calcHazardScore, calcConvenienceScore, calcDeviation } from '~/utils/score'
 import type { ScoreResponse, MunicipalityStats } from '~/types'
 
-export default defineEventHandler(async (event): Promise<ScoreResponse> => {
+// 同一座標への連続リクエストをサーバー側でキャッシュ（5分間）
+export default defineCachedEventHandler(async (event): Promise<ScoreResponse> => {
   const query = getQuery(event)
   const lat = parseFloat(query.lat as string)
   const lng = parseFloat(query.lng as string)
@@ -46,6 +47,17 @@ export default defineEventHandler(async (event): Promise<ScoreResponse> => {
       updatedAt: new Date().toISOString().split('T')[0],
     },
   }
+})
+
+}, {
+  maxAge: 60 * 5, // 5分キャッシュ
+  getKey: (event) => {
+    const q = getQuery(event)
+    // 小数点3桁（約100m精度）でキャッシュキーを作成
+    const lat = Math.round(parseFloat(q.lat as string) * 1000) / 1000
+    const lng = Math.round(parseFloat(q.lng as string) * 1000) / 1000
+    return `score:${lat}:${lng}`
+  },
 })
 
 async function getMunicipalityStats(

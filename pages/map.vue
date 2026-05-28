@@ -98,6 +98,7 @@ useHead({
       <span class="header-title">SUMALLY</span>
       <AddressSearch
         class="header-search"
+        :proximity="{ lat, lng }"
         @select="onAddressSelected"
         @locate="(lat, lng) => onLocationChanged({ lat, lng })"
       />

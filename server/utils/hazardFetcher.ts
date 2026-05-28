@@ -41,6 +41,7 @@ export async function fetchHazardData(
     try {
       const res = await fetch(url, {
         headers: { 'Ocp-Apim-Subscription-Key': apiKey },
+        signal: AbortSignal.timeout(8000),
       })
       if (!res.ok) {
         console.error(`[REINFOLIB] ${layerId} HTTP ${res.status}:`, await res.text())

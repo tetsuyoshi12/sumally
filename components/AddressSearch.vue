@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import type { MapboxGeocodingResponse, MapboxFeature } from '~/types'
 
+const props = defineProps<{
+  proximity?: { lat: number; lng: number } | null
+}>()
+
 const emit = defineEmits<{
   (e: 'select', lat: number, lng: number, address: string, bbox?: [number, number, number, number]): void
   (e: 'locate', lat: number, lng: number): void
@@ -28,7 +32,10 @@ async function onInput() {
     loading.value = true
     try {
       const encoded = encodeURIComponent(query.value)
-      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${config.public.mapboxToken}&language=ja&country=jp&limit=5&types=district,place,locality,neighborhood,address,poi`
+      const prox = props.proximity
+        ? `${props.proximity.lng},${props.proximity.lat}`
+        : 'ip'
+      const url = `https://api.mapbox.com/geocoding/v5/mapbox.places/${encoded}.json?access_token=${config.public.mapboxToken}&language=ja&country=jp&limit=5&types=district,place,locality,neighborhood,address,poi&proximity=${prox}`
       const res = await fetch(url)
       const data = (await res.json()) as MapboxGeocodingResponse
       suggestions.value = data.features ?? []
