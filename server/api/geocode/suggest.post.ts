@@ -3,16 +3,19 @@
  * POST /api/geocode/suggest
  * body: { q: string, lat?: number, lng?: number }
  */
+interface PlacePrediction {
+  placeId: string
+  text?: { text: string }
+  structuredFormat?: {
+    mainText: { text: string }
+    secondaryText?: { text: string }
+  }
+}
+
 interface AutocompleteResponse {
   suggestions?: Array<{
-    placePrediction: {
-      placeId: string
-      text: { text: string }
-      structuredFormat?: {
-        mainText: { text: string }
-        secondaryText?: { text: string }
-      }
-    }
+    placePrediction?: PlacePrediction
+    queryPrediction?: unknown // 無視する
   }>
 }
 
@@ -33,10 +36,10 @@ export default defineEventHandler(async (event) => {
     languageCode: 'ja',
   }
 
-  if (lat != null && lng != null && !isNaN(lat) && !isNaN(lng)) {
+  if (lat != null && lng != null && !isNaN(Number(lat)) && !isNaN(Number(lng))) {
     payload.locationBias = {
       circle: {
-        center: { latitude: lat, longitude: lng },
+        center: { latitude: Number(lat), longitude: Number(lng) },
         radius: 50000,
       },
     }
@@ -59,17 +62,20 @@ export default defineEventHandler(async (event) => {
     }
 
     const data = (await res.json()) as AutocompleteResponse
+    console.log('[Geocode/suggest] 件数:', data.suggestions?.length ?? 0, 'q=', q)
 
-    return (data.suggestions ?? []).map((s) => {
-      const p = s.placePrediction
-      const main = p.structuredFormat?.mainText.text ?? p.text.text
-      const sub = p.structuredFormat?.secondaryText?.text
-      return {
-        id: p.placeId,
-        name: p.text.text,
-        label: sub ? `${main}　${sub}` : main,
-      }
-    })
+    return (data.suggestions ?? [])
+      .filter((s) => s.placePrediction != null) // queryPrediction を除外
+      .map((s) => {
+        const p = s.placePrediction!
+        const main = p.structuredFormat?.mainText?.text ?? p.text?.text ?? q
+        const sub = p.structuredFormat?.secondaryText?.text
+        return {
+          id: p.placeId,
+          name: p.text?.text ?? main,
+          label: sub ? `${main}　${sub}` : main,
+        }
+      })
   } catch (e) {
     console.error('[Geocode/suggest] 失敗:', e)
     return []

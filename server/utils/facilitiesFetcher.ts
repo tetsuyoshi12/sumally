@@ -79,7 +79,9 @@ export async function fetchFacilitiesData(
 
       for (const place of data.places) {
         console.log(`[Places API] ${label} → ${place.displayName?.text} (${place.primaryType}) loc=${!!place.location}`)
-        if (place.location) {
+        // primaryType が指定タイプに一致するもののみ採用（誤判定防止）
+        const primaryOk = !place.primaryType || (types as readonly string[]).includes(place.primaryType)
+        if (place.location && primaryOk) {
           return {
             meters: haversineMeters(lat, lng, place.location.latitude, place.location.longitude),
             name: place.displayName?.text ?? label,
